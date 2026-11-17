@@ -1,0 +1,94 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened, edited]
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    if: >
+      github.event.sender.type != 'Bot' &&
+      github.event.issue.state == 'open'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Triage issue with Claude
+        id: triage
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: '--allowedTools "Bash(gh issue edit *)" "Bash(gh issue comment *)" "Read" "Grep" "Glob"'
+          prompt: |
+            Eres un asistente de triaje de issues para un juego de Tetris escrito en JavaScript vanilla.
+
+            Tu tarea es analizar el issue #${{ github.event.issue.number }} y realizar dos acciones:
+
+            ## 1. Asignar etiquetas
+
+            Analiza el título y cuerpo del issue y asigna las etiquetas apropiadas de las siguientes categorías:
+
+            **Tipo** (asigna exactamente una):
+            - `bug` — algo no funciona correctamente
+            - `enhancement` — mejora a funcionalidad existente
+            - `feature-request` — funcionalidad completamente nueva
+            - `documentation` — mejoras o adiciones a la documentación
+            - `question` — solicitud de información
+
+            **Área** (asigna una o más según corresponda):
+            - `area:gameplay` — lógica del juego: bucle principal, generación de piezas, limpieza de líneas, game over
+            - `area:controls` — manejo de teclado, rotación, movimiento, wall kicks
+            - `area:rendering` — dibujo en canvas, cuadrícula, pieza fantasma, vista previa de siguiente pieza
+            - `area:scoring` — cálculo de puntuación, progresión de nivel, conteo de líneas
+            - `area:ui` — diseño HTML, estilos CSS, overlay, panel lateral, responsive
+            - `area:performance` — tasa de cuadros, fluidez de animación, optimización
+
+            **Prioridad** (asigna exactamente una):
+            - `priority:high` — el juego no se puede usar o hay pérdida de datos/puntuación
+            - `priority:medium` — funcionalidad degradada pero el juego es jugable
+            - `priority:low` — mejora cosmética o de baja urgencia
+
+            Primero, si este evento es una edición (re-triaje), elimina las etiquetas de triaje anteriores ejecutando un comando por cada etiqueta existente del grupo de triaje:
+            gh issue edit ${{ github.event.issue.number }} --remove-label "ETIQUETA"
+
+            Luego asigna las nuevas etiquetas con:
+            gh issue edit ${{ github.event.issue.number }} --add-label "etiqueta1,etiqueta2,etiqueta3"
+
+            ## 2. Publicar comentario de diagnóstico
+
+            Después de asignar las etiquetas, publica UN SOLO comentario en el issue con el siguiente formato (en español):
+
+            ## 🔍 Diagnóstico Automático
+
+            **Resumen:** [Descripción concisa de lo que trata el issue]
+
+            **Archivos relevantes:**
+            - `game.js` — [qué parte del código está involucrada y por qué]
+            - `style.css` / `index.html` — [si aplica]
+
+            **Funciones clave:** [lista de funciones específicas del código que probablemente estén involucradas]
+
+            **Enfoque sugerido:**
+            [Descripción paso a paso de cómo se podría implementar la solución o mejora]
+
+            **Complejidad estimada:** [Baja / Media / Alta]
+
+            Usa gh issue comment para publicar el comentario.
+
+            IMPORTANTE:
+            - Lee los archivos del repositorio (game.js, index.html, style.css, CLAUDE.md) para dar un diagnóstico preciso.
+            - Sé específico: menciona nombres de funciones, variables y números de línea.
+            - Si el issue no tiene suficiente información, asigna la etiqueta `question` y pide más detalles en el comentario.
+            - No modifiques ningún archivo del repositorio.
